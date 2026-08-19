@@ -5,7 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const fileInfo = document.getElementById('fileInfo');
   const fileNameDisplay = document.getElementById('fileName');
   const btnClearFile = document.getElementById('btnClearFile');
-  const presetListContainer = document.getElementById('presetList');
+  const scannedCountBadge = document.getElementById('scannedCountBadge');
   const smtpStreamList = document.getElementById('smtpStreamList');
   
   const emptyStatePanel = document.getElementById('emptyStatePanel');
@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const headerSearch = document.getElementById('headerSearch');
 
   let allHeaders = []; // Cache to allow fast search filtering
-  let streamEmails = []; // In-memory cache for live SMTP emails
+  let streamEmails = []; // In-memory cache for live scanned emails
 
   // Initialize Lucide Icons
   lucide.createIcons();
@@ -104,40 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // -------------------------------------------------------------
-  // 2. Fetch & Render Presets Library
-  // -------------------------------------------------------------
-  async function loadPresets() {
-    try {
-      const res = await fetch('/api/samples');
-      const presets = await res.json();
-      
-      presetListContainer.innerHTML = '';
-      presets.forEach(preset => {
-        const item = document.createElement('div');
-        item.className = 'preset-item';
-        item.dataset.id = preset.id;
-        item.innerHTML = `
-          <div class="preset-title">${preset.name}</div>
-          <div class="preset-subject">${preset.subject}</div>
-        `;
-        
-        item.addEventListener('click', () => {
-          // Remove active classes
-          document.querySelectorAll('.preset-item, .stream-item').forEach(el => el.classList.remove('active'));
-          item.classList.add('active');
-          analyzePreset(preset.id);
-        });
-        
-        presetListContainer.appendChild(item);
-      });
-    } catch (err) {
-      console.error('Error loading presets:', err);
-      presetListContainer.innerHTML = `<div class="error-msg">Failed to load preset library.</div>`;
-    }
-  }
-
-  // -------------------------------------------------------------
-  // 3. Connect to Live Server-Sent Events (SMTP Ingestion Stream)
+  // 2. Connect to Live Server-Sent Events (Live Ingestion Stream)
   // -------------------------------------------------------------
   function connectSMTPStream() {
     const eventSource = new EventSource('/api/stream');
@@ -146,22 +113,22 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === 'history') {
-          streamEmails = payload.data;
+          streamEmails = payload.data || [];
           renderSMTPStream();
+          if (streamEmails.length > 0) {
+            displayAnalysisResults(streamEmails[0]);
+            highlightActiveStreamItem(0);
+          }
         } else if (payload.type === 'new-email') {
-          streamEmails.unshift(payload.data);
-          if (streamEmails.length > 20) streamEmails.pop();
-          renderSMTPStream();
-          
-          // Auto-select and display new emails immediately
-          displayAnalysisResults(payload.data);
-          
-          // Set active class on the first stream item
-          setTimeout(() => {
-            document.querySelectorAll('.preset-item, .stream-item').forEach(el => el.classList.remove('active'));
-            const firstStreamItem = smtpStreamList.querySelector('.stream-item');
-            if (firstStreamItem) firstStreamItem.classList.add('active');
-          }, 100);
+          // Check if already in stream
+          const exists = streamEmails.some(e => e.id === payload.data.id);
+          if (!exists) {
+            streamEmails.unshift(payload.data);
+            if (streamEmails.length > 30) streamEmails.pop();
+            renderSMTPStream();
+            displayAnalysisResults(payload.data);
+            highlightActiveStreamItem(0);
+          }
         }
       } catch (err) {
         console.error('Error processing stream message:', err);
@@ -173,11 +140,23 @@ document.addEventListener('DOMContentLoaded', () => {
     };
   }
 
+  function highlightActiveStreamItem(index) {
+    setTimeout(() => {
+      document.querySelectorAll('.stream-item').forEach(el => el.classList.remove('active'));
+      const items = smtpStreamList.querySelectorAll('.stream-item');
+      if (items[index]) items[index].classList.add('active');
+    }, 100);
+  }
+
   function renderSMTPStream() {
     smtpStreamList.innerHTML = '';
     
+    if (scannedCountBadge) {
+      scannedCountBadge.textContent = `${streamEmails.length} Mail${streamEmails.length === 1 ? '' : 's'}`;
+    }
+
     if (streamEmails.length === 0) {
-      smtpStreamList.innerHTML = `<div class="empty-stream-msg">Awaiting SMTP transmissions...</div>`;
+      smtpStreamList.innerHTML = `<div class="empty-stream-msg">No scanned emails yet. Connect your email above or upload an .eml file.</div>`;
       return;
     }
 
@@ -199,11 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Extract raw sender
       const fromStr = email.smtpSession ? email.smtpSession.from : (email.from || 'Unknown');
+      const tag = email.sourceType || (email.smtpSession ? 'SMTP' : 'Upload');
 
       item.innerHTML = `
         <div class="stream-item-info">
           <div class="stream-item-title">${escapeHtml(email.subject)}</div>
-          <div class="stream-item-sub">From: ${escapeHtml(fromStr)}</div>
+          <div class="stream-item-sub">From: ${escapeHtml(fromStr)} <span style="opacity: 0.6; font-size: 0.7rem;">(${escapeHtml(tag)})</span></div>
         </div>
         <div class="stream-item-score" style="color: ${scoreColor}; border: 1px solid ${scoreColor}; background: ${scoreColor}10">
           ${email.score}
@@ -211,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
 
       item.addEventListener('click', () => {
-        document.querySelectorAll('.preset-item, .stream-item').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.stream-item').forEach(el => el.classList.remove('active'));
         item.classList.add('active');
         displayAnalysisResults(email);
       });
@@ -221,20 +201,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // -------------------------------------------------------------
-  // 4. Perform Analysis (Preset & Upload)
+  // 3. Perform Upload Analysis
   // -------------------------------------------------------------
-  async function analyzePreset(presetId) {
-    showLoading();
-    try {
-      const res = await fetch(`/api/analyze-sample/${presetId}`, { method: 'POST' });
-      const data = await res.json();
-      displayAnalysisResults(data);
-    } catch (err) {
-      alert('Analysis failed: ' + err.message);
-      resetToEmptyState();
-    }
-  }
-
   async function uploadAndAnalyzeFile(file) {
     showLoading();
     
@@ -256,20 +224,18 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error(errorData.error || 'Server returned error');
       }
       const data = await res.json();
+      data.sourceType = 'EML Upload';
+      
+      // Add to stream list
+      streamEmails.unshift(data);
+      renderSMTPStream();
       displayAnalysisResults(data);
+      highlightActiveStreamItem(0);
     } catch (err) {
       alert('Analysis failed: ' + err.message);
       resetToEmptyState();
     }
   }
-
-  // Exposed helper to initialize first demo
-  window.loadFirstPreset = function() {
-    const firstPreset = presetListContainer.querySelector('.preset-item');
-    if (firstPreset) {
-      firstPreset.click();
-    }
-  };
 
   // -------------------------------------------------------------
   // 5. Render Dashboard View
@@ -760,8 +726,246 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   document.head.appendChild(styleEl);
 
+  // -------------------------------------------------------------
+  // 5. Live IMAP Mailbox Scanner Integration
+  // -------------------------------------------------------------
+  const providerBtns = document.querySelectorAll('.provider-btn');
+  const imapEmailInput = document.getElementById('imapEmail');
+  const imapPassInput = document.getElementById('imapPass');
+  const btnTogglePwd = document.getElementById('btnTogglePwd');
+  const pwdEyeIcon = document.getElementById('pwdEyeIcon');
+  const btnAppPassHelp = document.getElementById('btnAppPassHelp');
+  const appPassHelpBox = document.getElementById('appPassHelpBox');
+  const helpContentGmail = document.getElementById('helpContentGmail');
+  const helpContentOutlook = document.getElementById('helpContentOutlook');
+  const helpContentYahoo = document.getElementById('helpContentYahoo');
+  const advancedImapSettings = document.getElementById('advancedImapSettings');
+  const imapHostInput = document.getElementById('imapHost');
+  const imapPortInput = document.getElementById('imapPort');
+  const imapSecureInput = document.getElementById('imapSecure');
+  const btnConnectImap = document.getElementById('btnConnectImap');
+  const imapBtnText = document.getElementById('imapBtnText');
+  const imapSubActions = document.getElementById('imapSubActions');
+  const btnSyncRecent = document.getElementById('btnSyncRecent');
+  const btnDisconnectImap = document.getElementById('btnDisconnectImap');
+  const imapStatusBanner = document.getElementById('imapStatusBanner');
+  const imapStatusText = document.getElementById('imapStatusText');
+  const imapStatusDot = document.getElementById('imapStatusDot');
+
+  let selectedProvider = 'gmail';
+
+  const providerConfigs = {
+    gmail: { host: 'imap.gmail.com', port: 993, secure: true, placeholder: 'user@gmail.com' },
+    outlook: { host: 'outlook.office365.com', port: 993, secure: true, placeholder: 'user@outlook.com' },
+    yahoo: { host: 'imap.mail.yahoo.com', port: 993, secure: true, placeholder: 'user@yahoo.com' },
+    custom: { host: '', port: 993, secure: true, placeholder: 'user@yourdomain.com' }
+  };
+
+  // Provider Selection Handler
+  providerBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      providerBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      selectedProvider = btn.dataset.provider;
+
+      const conf = providerConfigs[selectedProvider];
+      imapEmailInput.placeholder = conf.placeholder;
+
+      if (selectedProvider === 'custom') {
+        advancedImapSettings.style.display = 'block';
+        imapHostInput.value = '';
+        imapPortInput.value = '993';
+        imapSecureInput.checked = true;
+      } else {
+        advancedImapSettings.style.display = 'none';
+        imapHostInput.value = conf.host;
+        imapPortInput.value = conf.port;
+        imapSecureInput.checked = conf.secure;
+      }
+
+      // Update Help Box display based on provider
+      helpContentGmail.style.display = selectedProvider === 'gmail' ? 'block' : 'none';
+      helpContentOutlook.style.display = selectedProvider === 'outlook' ? 'block' : 'none';
+      helpContentYahoo.style.display = selectedProvider === 'yahoo' ? 'block' : 'none';
+    });
+  });
+
+  // Toggle Password Visibility
+  if (btnTogglePwd) {
+    btnTogglePwd.addEventListener('click', () => {
+      const isPassword = imapPassInput.type === 'password';
+      imapPassInput.type = isPassword ? 'text' : 'password';
+      if (pwdEyeIcon) {
+        pwdEyeIcon.setAttribute('data-lucide', isPassword ? 'eye-off' : 'eye');
+        lucide.createIcons();
+      }
+    });
+  }
+
+  // Toggle App Password Help Box
+  if (btnAppPassHelp) {
+    btnAppPassHelp.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isHidden = appPassHelpBox.style.display === 'none';
+      appPassHelpBox.style.display = isHidden ? 'block' : 'none';
+    });
+  }
+
+  // Check IMAP Connection Status
+  async function checkImapStatus() {
+    try {
+      const res = await fetch('/api/imap/status');
+      const data = await res.json();
+      updateImapUI(data);
+    } catch (err) {
+      console.error('Error fetching IMAP status:', err);
+    }
+  }
+
+  function updateImapUI(status) {
+    if (status.connected) {
+      imapStatusBanner.className = 'imap-status-banner connected';
+      imapStatusText.innerHTML = `<strong>● Online:</strong> ${status.user} (Watching ${status.mailbox})`;
+      imapStatusDot.className = 'status-dot active';
+
+      btnConnectImap.style.display = 'none';
+      imapSubActions.style.display = 'grid';
+      imapEmailInput.disabled = true;
+      imapPassInput.disabled = true;
+    } else {
+      imapStatusBanner.className = 'imap-status-banner';
+      if (status.error) {
+        imapStatusBanner.className = 'imap-status-banner error';
+        imapStatusText.textContent = `Error: ${status.error}`;
+        imapStatusDot.className = 'status-dot error';
+      } else {
+        imapStatusText.textContent = 'Status: Disconnected';
+        imapStatusDot.className = 'status-dot';
+      }
+
+      btnConnectImap.style.display = 'flex';
+      btnConnectImap.disabled = false;
+      imapBtnText.textContent = 'Connect & Start Live Monitoring';
+      imapSubActions.style.display = 'none';
+      imapEmailInput.disabled = false;
+      imapPassInput.disabled = false;
+    }
+  }
+
+  // Connect IMAP
+  if (btnConnectImap) {
+    btnConnectImap.addEventListener('click', async () => {
+      const email = imapEmailInput.value.trim();
+      const pass = imapPassInput.value.trim();
+      const host = imapHostInput.value.trim() || providerConfigs[selectedProvider].host;
+      const port = parseInt(imapPortInput.value, 10) || 993;
+      const secure = imapSecureInput.checked;
+
+      if (!email || !pass) {
+        alert('Please provide both your email address and App Password.');
+        return;
+      }
+
+      btnConnectImap.disabled = true;
+      imapBtnText.textContent = 'Authenticating & Connecting...';
+      imapStatusBanner.className = 'imap-status-banner connecting';
+      imapStatusText.textContent = 'Connecting to IMAP server...';
+      imapStatusDot.className = 'status-dot connecting';
+
+      try {
+        const res = await fetch('/api/imap/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ host, port, secure, user: email, pass, mailbox: 'INBOX' })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          updateImapUI(data.status);
+          // Auto-trigger scanning recent emails right upon connection
+          await syncRecentEmails(5, true);
+        } else {
+          throw new Error(data.error || 'Connection failed');
+        }
+      } catch (err) {
+        alert('IMAP Connection Failed: ' + err.message);
+        updateImapUI({ connected: false, error: err.message });
+      }
+    });
+  }
+
+  // Disconnect IMAP
+  if (btnDisconnectImap) {
+    btnDisconnectImap.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/imap/disconnect', { method: 'POST' });
+        const data = await res.json();
+        updateImapUI(data.status);
+      } catch (err) {
+        alert('Error disconnecting: ' + err.message);
+      }
+    });
+  }
+
+  // Unified Sync Recent Emails function
+  async function syncRecentEmails(count = 5, silent = false) {
+    if (btnSyncRecent) {
+      btnSyncRecent.disabled = true;
+      btnSyncRecent.innerHTML = `<i data-lucide="loader-2" class="animate-spin"></i> Scanning...`;
+      lucide.createIcons();
+    }
+
+    try {
+      const res = await fetch('/api/imap/sync-recent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        if (data.results && data.results.length > 0) {
+          // Update stream emails
+          data.results.forEach(analysis => {
+            const exists = streamEmails.some(e => e.id === analysis.id);
+            if (!exists) streamEmails.unshift(analysis);
+          });
+          renderSMTPStream();
+          displayAnalysisResults(data.results[data.results.length - 1]);
+          highlightActiveStreamItem(0);
+          if (!silent) {
+            alert(`Analyzed ${data.results.length} recent email(s) from your inbox!`);
+          }
+        } else if (!silent) {
+          alert('Mailbox is empty or no recent messages found.');
+        }
+      } else {
+        throw new Error(data.error || 'Sync failed');
+      }
+    } catch (err) {
+      if (!silent) {
+        alert('Failed to scan recent emails: ' + err.message);
+      }
+    } finally {
+      if (btnSyncRecent) {
+        btnSyncRecent.disabled = false;
+        btnSyncRecent.innerHTML = `<i data-lucide="refresh-cw"></i> Scan Last 5 Emails`;
+        lucide.createIcons();
+      }
+    }
+  }
+
+  // Sync Recent Emails Button
+  if (btnSyncRecent) {
+    btnSyncRecent.addEventListener('click', () => {
+      syncRecentEmails(5, false);
+    });
+  }
+
   // Initialize
   checkSettingsStatus();
-  loadPresets();
+  checkImapStatus();
   connectSMTPStream();
 });
+
+

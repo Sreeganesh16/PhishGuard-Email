@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const dns = require('dns').promises;
 const { SMTPServer } = require('smtp-server');
+const ImapWatcher = require('./lib/imapWatcher');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -17,9 +18,12 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
 
 // Memory store for settings & live SMTP inbox history
-let vtApiKey = process.env.VIRUSTOTAL_API_KEY || '';
+let vtApiKey = process.env.VIRUSTOTAL_API_KEY || '447b042b47be2ce98eca6ccf2b92d873759a808f3db76976dc28b73fac547019';
 const inboxHistory = [];
 let sseClients = [];
+
+// Initialize IMAP Watcher Service
+const imapWatcher = new ImapWatcher();
 
 // Pre-packaged samples for demoing without needing real files
 const samples = [
@@ -506,19 +510,29 @@ async function analyzeEmail(parsedData) {
   });
 
   // 6. Analyze Links / URLs
+  function cleanExtractedUrl(urlStr) {
+    if (!urlStr) return '';
+    let cleaned = urlStr.trim();
+    // Strip leading/trailing brackets, quotes, parentheses, and punctuation
+    cleaned = cleaned.replace(/^[<"'\(\[\{]+/, '').replace(/[>"'\)\]\};,.\s]+$/, '');
+    return cleaned;
+  }
+
   const linkRegex = /href=["'](https?:\/\/[^"']+)["']/gi;
   let rawLinks = [];
   let match;
   while ((match = linkRegex.exec(parsedData.html || '')) !== null) {
-    rawLinks.push(match[1]);
+    const cleaned = cleanExtractedUrl(match[1]);
+    if (cleaned) rawLinks.push(cleaned);
   }
 
-  const textLinkRegex = /(https?:\/\/[^\s]+)/gi;
+  const textLinkRegex = /(https?:\/\/[^\s<>"']+)/gi;
   while ((match = textLinkRegex.exec(parsedData.text || '')) !== null) {
-    rawLinks.push(match[1]);
+    const cleaned = cleanExtractedUrl(match[1]);
+    if (cleaned) rawLinks.push(cleaned);
   }
 
-  const uniqueLinks = [...new Set(rawLinks)];
+  const uniqueLinks = [...new Set(rawLinks.filter(Boolean))];
 
   uniqueLinks.forEach(linkUrl => {
     let parsedUrl;
@@ -530,37 +544,77 @@ async function analyzeEmail(parsedData) {
 
     const host = parsedUrl.hostname;
     const protocol = parsedUrl.protocol;
+    const pathname = parsedUrl.pathname.toLowerCase();
     
     let isSuspicious = false;
     let linkThreats = [];
 
+    // 1. Direct Executable & Malware Dropper Detection in URL
+    const dangerousUrlExts = ['.exe', '.scr', '.vbs', '.bat', '.cmd', '.msi', '.ps1', '.hta', '.jar', '.apk', '.wsf', '.pif', '.cpl', '.dll', '.reg', '.iso', '.img'];
+    const macroUrlExts = ['.docm', '.xlsm', '.pptm', '.dotm'];
+    const archiveUrlExts = ['.zip', '.rar', '.7z', '.cab', '.tar', '.gz'];
+
+    const hasDangerousExt = dangerousUrlExts.some(ext => pathname.endsWith(ext) || pathname.includes(ext + '?') || pathname.includes(ext + '&') || pathname.includes(ext + '#'));
+    const hasMacroExt = macroUrlExts.some(ext => pathname.endsWith(ext) || pathname.includes(ext + '?') || pathname.includes(ext + '&'));
+    const hasArchiveExt = archiveUrlExts.some(ext => pathname.endsWith(ext) || pathname.includes(ext + '?') || pathname.includes(ext + '&'));
+
+    if (hasDangerousExt) {
+      isSuspicious = true;
+      linkThreats.push(`Direct Executable / Malware Payload Dropper Link (${pathname.split('/').pop()})`);
+      result.score += 70;
+      result.indicators.push({
+        type: 'link',
+        severity: 'critical',
+        title: 'Direct Malware Dropper Link (Executable Payload)',
+        description: `The URL "${linkUrl}" points directly to an executable binary or scripting payload capable of remote code execution.`
+      });
+    } else if (hasMacroExt) {
+      isSuspicious = true;
+      linkThreats.push(`Macro-Enabled Office Document Download Link (${pathname.split('/').pop()})`);
+      result.score += 45;
+      result.indicators.push({
+        type: 'link',
+        severity: 'high',
+        title: 'Macro-Enabled Document Download Link',
+        description: `The URL "${linkUrl}" points to an Office file with embedded macro capabilities.`
+      });
+    } else if (hasArchiveExt) {
+      isSuspicious = true;
+      linkThreats.push(`Compressed Archive Download Link (${pathname.split('/').pop()})`);
+      result.score += 25;
+    }
+
+    // 2. Insecure HTTP Protocol
     if (protocol === 'http:') {
       isSuspicious = true;
       linkThreats.push('Uses insecure HTTP protocol');
       result.score += 15;
     }
 
+    // 3. Raw IP Address Hostname
     const ipPattern = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/;
     if (ipPattern.test(host)) {
       isSuspicious = true;
       linkThreats.push('URL hostname is a raw IP address');
-      result.score += 25;
+      result.score += 35;
     }
 
-    const suspiciousTLDs = ['.xyz', '.top', '.tk', '.work', '.click', '.gq', '.cf', '.ga', '.ml', '.online', '.site', '.club', '.info'];
+    // 4. Suspicious TLD Scoring
+    const suspiciousTLDs = ['.xyz', '.top', '.tk', '.work', '.click', '.gq', '.cf', '.ga', '.ml', '.online', '.site', '.club', '.info', '.buzz', '.rest', '.quest', '.cam'];
     suspiciousTLDs.forEach(tld => {
       if (host.endsWith(tld)) {
         isSuspicious = true;
         linkThreats.push(`Uses a suspicious top-level domain (${tld})`);
-        result.score += 15;
+        result.score += 20;
       }
     });
 
+    // 5. Brand Impersonation / Typosquatting
     legitBrands.forEach(brand => {
       if (host.includes(brand) && !host.endsWith(`.${brand}.com`) && host !== `${brand}.com` && host !== `www.${brand}.com`) {
         isSuspicious = true;
         linkThreats.push(`Potential typosquatting/impersonation of brand: "${brand}"`);
-        result.score += 25;
+        result.score += 30;
       }
     });
 
@@ -827,6 +881,48 @@ app.post('/api/analyze-upload', upload.single('emailFile'), async (req, res) => 
   }
 });
 
+// Wire IMAP Watcher callbacks
+imapWatcher.setCallbacks({
+  onAnalyze: analyzeEmail,
+  onBroadcast: broadcastEmail
+});
+
+// IMAP Endpoints
+app.get('/api/imap/status', (req, res) => {
+  res.json(imapWatcher.getStatus());
+});
+
+app.post('/api/imap/connect', async (req, res) => {
+  try {
+    const result = await imapWatcher.connect(req.body);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] IMAP connect error:', error.message);
+    res.status(400).json({ error: error.message || 'Failed to connect to IMAP server' });
+  }
+});
+
+app.post('/api/imap/disconnect', async (req, res) => {
+  try {
+    const result = await imapWatcher.disconnect();
+    res.json(result);
+  } catch (error) {
+    console.error('[API] IMAP disconnect error:', error.message);
+    res.status(500).json({ error: error.message || 'Failed to disconnect from IMAP server' });
+  }
+});
+
+app.post('/api/imap/sync-recent', async (req, res) => {
+  try {
+    const count = parseInt(req.body.count, 10) || 5;
+    const result = await imapWatcher.syncRecent(count);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] IMAP sync error:', error.message);
+    res.status(400).json({ error: error.message || 'Failed to sync recent emails' });
+  }
+});
+
 // Initialize SMTP Receiver Middleware
 const smtpServer = new SMTPServer({
   disabledCommands: ['STARTTLS', 'AUTH'],
@@ -863,3 +959,4 @@ app.listen(port, () => {
 smtpServer.listen(smtpPort, () => {
   console.log(`SMTP Receiver Middleware listening on port ${smtpPort}`);
 });
+

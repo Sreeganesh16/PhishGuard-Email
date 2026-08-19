@@ -13,6 +13,7 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.2.1",
+    "imapflow": "^1.7.1",
     "mailparser": "^3.9.15",
     "multer": "^2.2.0",
     "smtp-server": "^3.19.3"

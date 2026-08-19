@@ -63,15 +63,121 @@
         </div>
       </div>
 
-      <!-- Live SMTP Ingestion Card -->
+      <!-- Live IMAP Mailbox Ingestion Card -->
+      <div class="glass-card imap-card">
+        <div class="card-header">
+          <div class="status-dot" id="imapStatusDot"></div>
+          <i data-lucide="radio"></i>
+          <h2>Live Mailbox Scanner (IMAP)</h2>
+        </div>
+        <p class="card-description">Connect your email inbox to intercept and analyze incoming emails in real-time as they arrive.</p>
+        
+        <!-- Provider Quick Select -->
+        <div class="provider-selector">
+          <button type="button" class="provider-btn active" data-provider="gmail">Gmail</button>
+          <button type="button" class="provider-btn" data-provider="outlook">Outlook / 365</button>
+          <button type="button" class="provider-btn" data-provider="yahoo">Yahoo</button>
+          <button type="button" class="provider-btn" data-provider="custom">Custom IMAP</button>
+        </div>
+
+        <form id="imapForm" class="imap-form" onsubmit="return false;">
+          <div class="form-row">
+            <label class="form-label" for="imapEmail">Email Address</label>
+            <input type="email" id="imapEmail" class="form-input" placeholder="user@gmail.com" required autocomplete="email">
+          </div>
+
+          <div class="form-row">
+            <div class="label-with-hint">
+              <label class="form-label" for="imapPass">App Password / Password</label>
+              <a href="#" class="help-link" id="btnAppPassHelp" title="App Password Instructions">How to get App Password?</a>
+            </div>
+            <div class="password-input-wrapper">
+              <input type="password" id="imapPass" class="form-input" placeholder="Enter App Password..." required autocomplete="current-password">
+              <button type="button" class="btn-toggle-pwd" id="btnTogglePwd" title="Show/Hide Password">
+                <i data-lucide="eye" id="pwdEyeIcon"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Advanced / Custom IMAP settings (collapsible) -->
+          <div class="advanced-imap-settings" id="advancedImapSettings" style="display: none;">
+            <div class="form-row-grid">
+              <div>
+                <label class="form-label" for="imapHost">IMAP Server Host</label>
+                <input type="text" id="imapHost" class="form-input" value="imap.gmail.com">
+              </div>
+              <div>
+                <label class="form-label" for="imapPort">Port</label>
+                <input type="number" id="imapPort" class="form-input" value="993">
+              </div>
+            </div>
+            <div class="form-row-checkbox">
+              <label class="checkbox-label">
+                <input type="checkbox" id="imapSecure" checked> Use SSL/TLS Encryption
+              </label>
+            </div>
+          </div>
+
+          <!-- App Password Help Box -->
+          <div class="app-pass-help-box" id="appPassHelpBox" style="display: none;">
+            <h4><i data-lucide="info"></i> Quick App Password Setup</h4>
+            <div id="helpContentGmail">
+              <ol>
+                <li>Go to <strong>Google Account Security</strong> settings.</li>
+                <li>Ensure <strong>2-Step Verification</strong> is enabled.</li>
+                <li>Search for <strong>"App passwords"</strong>.</li>
+                <li>Create a new app password named <em>"PhishGuard"</em> and paste the 16-character code above.</li>
+              </ol>
+            </div>
+            <div id="helpContentOutlook" style="display: none;">
+              <ol>
+                <li>Go to <strong>Microsoft Account Security</strong> > Advanced security options.</li>
+                <li>Under <strong>App passwords</strong>, select <em>Create a new app password</em>.</li>
+                <li>Paste the generated password above.</li>
+              </ol>
+            </div>
+            <div id="helpContentYahoo" style="display: none;">
+              <ol>
+                <li>Go to <strong>Yahoo Account Security</strong>.</li>
+                <li>Click <strong>Generate app password</strong>.</li>
+                <li>Paste the generated password above.</li>
+              </ol>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="imap-actions">
+            <button type="button" class="btn btn-primary btn-full" id="btnConnectImap">
+              <i data-lucide="play"></i> <span id="imapBtnText">Connect & Start Live Monitoring</span>
+            </button>
+            <div class="imap-sub-actions" id="imapSubActions" style="display: none;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnSyncRecent" title="Scan the last 5 emails in this mailbox immediately">
+                <i data-lucide="refresh-cw"></i> Scan Last 5 Emails
+              </button>
+              <button type="button" class="btn btn-danger btn-sm" id="btnDisconnectImap">
+                <i data-lucide="square"></i> Disconnect
+              </button>
+            </div>
+          </div>
+
+          <!-- Connection Status -->
+          <div class="imap-status-banner" id="imapStatusBanner">
+            <span class="status-text" id="imapStatusText">Status: Disconnected</span>
+          </div>
+        </form>
+      </div>
+
+      <!-- Live Scanned Mailbox Feed Card -->
       <div class="glass-card stream-card">
         <div class="card-header">
           <div class="pulse-red"></div>
-          <h2>Live SMTP Gateway</h2>
+          <i data-lucide="inbox"></i>
+          <h2>Scanned Mailbox Feed</h2>
+          <span class="badge" id="scannedCountBadge" style="margin-left: auto; font-size: 0.7rem; background: rgba(0,242,254,0.15); color: var(--accent-cyan); padding: 2px 8px; border-radius: 12px;">0 Mails</span>
         </div>
-        <p class="card-description">Incoming mail streams received on SMTP port 2525 are intercepted and analyzed instantly.</p>
+        <p class="card-description">Real-time threat feed of emails intercepted from your connected mailbox and uploads.</p>
         <div class="smtp-stream-list" id="smtpStreamList">
-          <div class="empty-stream-msg">Awaiting SMTP transmissions...</div>
+          <div class="empty-stream-msg">No scanned emails yet. Connect your email above or upload an .eml file.</div>
         </div>
       </div>
 
@@ -81,7 +187,7 @@
           <i data-lucide="key"></i>
           <h2>Threat Intel Settings</h2>
         </div>
-        <p class="card-description">Configure your VirusTotal API key to query live intelligence reputation for parsed domains.</p>
+        <p class="card-description">VirusTotal threat intelligence engine status for querying domain reputations.</p>
         
         <div class="settings-form">
           <div class="input-group">
@@ -90,20 +196,7 @@
               <i data-lucide="save"></i>
             </button>
           </div>
-          <span class="settings-status" id="vtKeyStatus">VT Status: Unconfigured</span>
-        </div>
-      </div>
-
-      <!-- Quick presets library -->
-      <div class="glass-card preset-card">
-        <div class="card-header">
-          <i data-lucide="layers"></i>
-          <h2>Threat Library Presets</h2>
-        </div>
-        <p class="card-description">Load simulated scenarios to instantly preview AegisMail's analysis and framework mappings without local files.</p>
-        
-        <div class="preset-list" id="presetList">
-          <div class="loading-spinner">Loading presets...</div>
+          <span class="settings-status" id="vtKeyStatus">VT Status: Key Configured (Live Mode)</span>
         </div>
       </div>
 
@@ -319,15 +412,12 @@
 
     </section>
 
-    <!-- Empty State Dashboard (Shown before upload/preset selection) -->
+    <!-- Empty State Dashboard (Shown before upload or mailbox connection) -->
     <section class="results-panel empty-state" id="emptyStatePanel">
       <div class="glass-card empty-card">
-        <i data-lucide="eye" class="empty-icon animate-pulse"></i>
-        <h1>Awaiting Ingestion Stream</h1>
-        <p>AegisMail is ready to run deep analysis. Select a threat scenario from the "Presets Library", send an email to the SMTP server (Port 2525), or drag and drop a raw email (.eml) file to begin auditing security alignment, suspicious indicators, and intelligence mappings.</p>
-        <div class="actions">
-          <button class="btn btn-primary" onclick="loadFirstPreset()">Load Quick Demo</button>
-        </div>
+        <i data-lucide="shield-check" class="empty-icon"></i>
+        <h1>Live Email Threat Engine Ready</h1>
+        <p>Connect your email inbox using the <strong>Live Mailbox Scanner (IMAP)</strong> on the left to start analyzing incoming emails automatically, or upload a <strong>.eml</strong> file to audit headers, security alignment, URLs, and MITRE ATT&CK indicators.</p>
       </div>
     </section>
 
