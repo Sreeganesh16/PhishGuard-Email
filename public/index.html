@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AegisMail // Automated Phishing Intelligence & Analysis Platform</title>
+  <!-- Google Fonts: Space Grotesk & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Background decorative grid & glow effects -->
+  <div class="glow-bg"></div>
+  <div class="grid-overlay"></div>
+
+  <!-- Header Section -->
+  <header>
+    <div class="logo">
+      <i data-lucide="shield-alert" class="logo-icon"></i>
+      <div class="logo-text">
+        <span class="logo-title">AEGIS // MAIL</span>
+        <span class="logo-subtitle">PHISHING INTELLIGENCE & THREAT MAPPING</span>
+      </div>
+    </div>
+    <div class="system-status">
+      <div class="status-indicator online"></div>
+      <span>THREAT ENGINE & SMTP GATEWAY: ONLINE</span>
+    </div>
+  </header>
+
+  <!-- Main Layout Grid -->
+  <main class="dashboard-container">
+    
+    <!-- Left Panel: Input controls -->
+    <section class="left-panel">
+      
+      <!-- Upload Card -->
+      <div class="glass-card upload-card">
+        <div class="card-header">
+          <i data-lucide="upload-cloud"></i>
+          <h2>Ingest EML Source</h2>
+        </div>
+        <p class="card-description">Upload a standard RFC 822 email file (.eml) to parse headers, metadata, attachments, and URLs.</p>
+        
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="emailFile" accept=".eml" class="file-input">
+          <i data-lucide="mail" class="upload-icon"></i>
+          <span class="upload-text">Drag & drop your <strong>.eml file</strong> here</span>
+          <span class="upload-or">or</span>
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('emailFile').click()">Browse Files</button>
+        </div>
+        
+        <div class="file-info" id="fileInfo" style="display: none;">
+          <i data-lucide="file-text"></i>
+          <span class="file-name" id="fileName">email_sample.eml</span>
+          <button class="btn-clear" id="btnClearFile"><i data-lucide="x"></i></button>
+        </div>
+      </div>
+
+      <!-- Live SMTP Ingestion Card -->
+      <div class="glass-card stream-card">
+        <div class="card-header">
+          <div class="pulse-red"></div>
+          <h2>Live SMTP Gateway</h2>
+        </div>
+        <p class="card-description">Incoming mail streams received on SMTP port 2525 are intercepted and analyzed instantly.</p>
+        <div class="smtp-stream-list" id="smtpStreamList">
+          <div class="empty-stream-msg">Awaiting SMTP transmissions...</div>
+        </div>
+      </div>
+
+      <!-- Settings Card -->
+      <div class="glass-card settings-card">
+        <div class="card-header">
+          <i data-lucide="key"></i>
+          <h2>Threat Intel Settings</h2>
+        </div>
+        <p class="card-description">Configure your VirusTotal API key to query live intelligence reputation for parsed domains.</p>
+        
+        <div class="settings-form">
+          <div class="input-group">
+            <input type="password" id="vtApiKeyInput" placeholder="VirusTotal API Key..." class="form-input">
+            <button type="button" class="btn btn-primary btn-icon" id="btnSaveSettings" title="Save API Key">
+              <i data-lucide="save"></i>
+            </button>
+          </div>
+          <span class="settings-status" id="vtKeyStatus">VT Status: Unconfigured</span>
+        </div>
+      </div>
+
+      <!-- Quick presets library -->
+      <div class="glass-card preset-card">
+        <div class="card-header">
+          <i data-lucide="layers"></i>
+          <h2>Threat Library Presets</h2>
+        </div>
+        <p class="card-description">Load simulated scenarios to instantly preview AegisMail's analysis and framework mappings without local files.</p>
+        
+        <div class="preset-list" id="presetList">
+          <div class="loading-spinner">Loading presets...</div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Right/Center Panel: Results -->
+    <section class="results-panel" id="resultsPanel" style="display: none;">
+      
+      <!-- Top Summary Section -->
+      <div class="summary-section">
+        
+        <!-- Score Radial Card -->
+        <div class="glass-card score-card">
+          <div class="score-container">
+            <svg class="progress-ring" width="160" height="160">
+              <circle class="progress-ring__circle-bg" stroke="rgba(255,255,255,0.05)" stroke-width="8" fill="transparent" r="70" cx="80" cy="80"/>
+              <circle class="progress-ring__circle" id="scoreCircle" stroke="#ff4a4a" stroke-width="8" fill="transparent" r="70" cx="80" cy="80"/>
+            </svg>
+            <div class="score-display">
+              <span class="score-val" id="scoreVal">0</span>
+              <span class="score-label">THREAT SCORE</span>
+            </div>
+          </div>
+          
+          <div class="verdict-wrapper">
+            <span class="verdict-title">SEVERITY CLASSIFICATION</span>
+            <span class="verdict-badge" id="verdictBadge">CRITICAL</span>
+          </div>
+        </div>
+
+        <!-- Live Threat Intelligence Panel -->
+        <div class="stats-column">
+          <div class="glass-card stat-detail-card">
+            <h3>Active Threat Intelligence</h3>
+            <div class="intel-grid">
+              
+              <!-- IP Geoloc Group -->
+              <div class="intel-group">
+                <span class="intel-header"><i data-lucide="globe"></i> Sender IP Geolocation</span>
+                <div class="intel-content">
+                  <span class="intel-val" id="intelIP">Checking...</span>
+                  <span class="intel-label" id="intelGeo">Retrieving info...</span>
+                  <span class="intel-sub" id="intelISP">Retrieving network provider...</span>
+                </div>
+              </div>
+
+              <!-- DNS Records Group -->
+              <div class="intel-group">
+                <span class="intel-header"><i data-lucide="shield-check"></i> DNS Validation Records</span>
+                <div class="intel-content">
+                  <div class="dns-record-badge">
+                    <span>MX Record:</span>
+                    <span class="auth-badge" id="dnsMxBadge">Verified</span>
+                  </div>
+                  <div class="dns-record-val" id="dnsSpfRecord">SPF: Retrieving TXT...</div>
+                </div>
+              </div>
+
+              <!-- VirusTotal Group -->
+              <div class="intel-group">
+                <span class="intel-header"><i data-lucide="shield-alert"></i> VirusTotal Reputation</span>
+                <div class="intel-content" id="vtRepContent">
+                  <span class="intel-val" id="vtHeaderVal">Unconfigured</span>
+                  <span class="intel-label" id="vtSubVal">Configure key in left sidebar.</span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Mini Counts Stats -->
+          <div class="stats-grid-row">
+            <div class="glass-card mini-stat-card">
+              <i data-lucide="link" class="icon-link"></i>
+              <div class="mini-stat-info">
+                <span class="mini-stat-val" id="linkCount">0</span>
+                <span class="mini-stat-label">Total URLs</span>
+              </div>
+            </div>
+            <div class="glass-card mini-stat-card">
+              <i data-lucide="paperclip" class="icon-clip"></i>
+              <div class="mini-stat-info">
+                <span class="mini-stat-val" id="attachmentCount">0</span>
+                <span class="mini-stat-label">Attachments</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="tab-navigation">
+        <button class="tab-btn active" data-tab="tab-indicators">
+          <i data-lucide="alert-triangle"></i>
+          <span>Indicators of Abuse</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-frameworks">
+          <i data-lucide="git-branch"></i>
+          <span>MITRE & OWASP Mapping</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-headers">
+          <i data-lucide="terminal"></i>
+          <span>Analyzed Headers</span>
+        </button>
+        <button class="tab-btn" data-tab="tab-content">
+          <i data-lucide="file-code"></i>
+          <span>Extracted Artifacts</span>
+        </button>
+      </div>
+
+      <!-- Tab Content Cards -->
+      <div class="tab-content-container">
+        
+        <!-- Tab: Indicators of Abuse -->
+        <div class="tab-pane active" id="tab-indicators">
+          <div class="glass-card pane-card">
+            <div class="pane-header">
+              <h2>Detected Phishing Indicators</h2>
+              <span class="indicator-count" id="indicatorCountBadge">0 Flags</span>
+            </div>
+            <div class="indicator-list" id="indicatorList">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: MITRE ATT&CK & OWASP -->
+        <div class="tab-pane" id="tab-frameworks">
+          <div class="framework-grid">
+            <!-- MITRE Panel -->
+            <div class="glass-card pane-card">
+              <div class="pane-header">
+                <div class="title-with-logo">
+                  <i data-lucide="shield-alert" class="mitre-color"></i>
+                  <h2>MITRE ATT&CK® Mapping</h2>
+                </div>
+              </div>
+              <div class="mitre-list" id="mitreList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+
+            <!-- OWASP Panel -->
+            <div class="glass-card pane-card">
+              <div class="pane-header">
+                <div class="title-with-logo">
+                  <i data-lucide="database" class="owasp-color"></i>
+                  <h2>OWASP Top 10 Mapping</h2>
+                </div>
+              </div>
+              <div class="owasp-list" id="owaspList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Parsed Headers -->
+        <div class="tab-pane" id="tab-headers">
+          <div class="glass-card pane-card">
+            <div class="pane-header">
+              <h2>Email Header Analysis</h2>
+              <div class="search-box">
+                <i data-lucide="search"></i>
+                <input type="text" id="headerSearch" placeholder="Filter headers...">
+              </div>
+            </div>
+            <div class="table-container">
+              <table class="header-table">
+                <thead>
+                  <tr>
+                    <th>Header Field</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody id="headerTableBody">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Extracted Artifacts -->
+        <div class="tab-pane" id="tab-content">
+          <div class="artifacts-layout">
+            
+            <!-- Extracted Links -->
+            <div class="glass-card pane-card">
+              <div class="pane-header">
+                <h2>Extracted URLs & Hyperlinks</h2>
+              </div>
+              <div class="url-list" id="urlList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+
+            <!-- Extracted Attachments -->
+            <div class="glass-card pane-card">
+              <div class="pane-header">
+                <h2>Extracted Attachments</h2>
+              </div>
+              <div class="attachment-list" id="attachmentList">
+                <!-- Dynamically populated -->
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- Empty State Dashboard (Shown before upload/preset selection) -->
+    <section class="results-panel empty-state" id="emptyStatePanel">
+      <div class="glass-card empty-card">
+        <i data-lucide="eye" class="empty-icon animate-pulse"></i>
+        <h1>Awaiting Ingestion Stream</h1>
+        <p>AegisMail is ready to run deep analysis. Select a threat scenario from the "Presets Library", send an email to the SMTP server (Port 2525), or drag and drop a raw email (.eml) file to begin auditing security alignment, suspicious indicators, and intelligence mappings.</p>
+        <div class="actions">
+          <button class="btn btn-primary" onclick="loadFirstPreset()">Load Quick Demo</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <span>AEGISMAIL // PLATFORM MVP v1.0.0</span>
+    <span>STRICT DEFENSIVE USE ONLY</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
